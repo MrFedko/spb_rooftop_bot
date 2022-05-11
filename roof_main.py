@@ -1,13 +1,30 @@
 import httplib2
 from apiclient import discovery
 from oauth2client.service_account import ServiceAccountCredentials
-from info import roof_bot
+from info import roof_bot, Mikhail, Kirill
 import logging
 from aiogram import Bot, Dispatcher, executor, types
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher import FSMContext
 from aiogram_calendar import simple_cal_callback, SimpleCalendar
+from aiogram.dispatcher.filters.state import State, StatesGroup
 import sqlite3
+
+
+class Form(StatesGroup):
+    number = State()
+
+
+# create logging and db of orders
+# conn = sqlite3.connect('log.db')
+# cur = conn.cursor()
+# cur.execute('CREATE TABLE users(date TEXT, user_id TEXT, username TEXT)')
+#
+# order = sqlite3.connect('order.db')
+# cursor = order.cursor()
+# cursor.execute('CREATE TABLE users(date_of_order TEXT, trip TEXT,'
+#                ' count_peoples TEXT, date_trip TEXT, format TEXT, cost TEXT, '
+#                'total TEXT, user_name TEXT, telephone TEXT)')
 
 
 # add our bot and memory storage
@@ -41,6 +58,10 @@ for num, road in enumerate(all_roads):
 @dp.message_handler(commands="start", state='*')
 async def start_message(message: types.Message):
     await message.answer("""приветственное сообщение""", reply_markup=markup)
+    conn = sqlite3.connect('log.db')
+    cur = conn.cursor()
+    cur.execute(f'INSERT INTO users VALUES("{message.date}", "{message.from_user.id}", "@{message.from_user.username}")')
+    conn.commit()
 
 
 @dp.callback_query_handler(lambda c: c.data.startswith('start'), state='*')
@@ -122,7 +143,7 @@ async def process_simple_calendar(callback_query: types.CallbackQuery, callback_
     await bot.delete_message(callback_query.from_user.id, callback_query.message.message_id)
 
 
-@dp.callback_query_handler(lambda call: call.data in ("-", "+"))        # change inline keyboard and select count of peoples
+@dp.callback_query_handler(lambda call: call.data in ("-", "+"), state='*')        # change inline keyboard and select count of peoples
 async def next_keyboard(callback_query: types.CallbackQuery, state: FSMContext):
     async with state.proxy() as data:
         if callback_query.data == "+":
@@ -143,7 +164,7 @@ async def next_keyboard(callback_query: types.CallbackQuery, state: FSMContext):
 
 
 @dp.callback_query_handler(lambda c: c.data in ("group", "individual"), state='*')  # select time of road
-async def select_date_road(callback_query: types.CallbackQuery, state: FSMContext):
+async def select_time_road(callback_query: types.CallbackQuery, state: FSMContext):
     button_1 = types.InlineKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True) # 10 - 22
     button_2 = types.InlineKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True) # 10 - 18
     button_3 = types.InlineKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True) # 11 - 15
@@ -168,24 +189,32 @@ async def select_date_road(callback_query: types.CallbackQuery, state: FSMContex
         await callback_query.message.answer("Выберите время экскурсии", reply_markup=current_buttons)
     else:
         current_buttons = types.InlineKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-        current_buttons.add(types.InlineKeyboardButton(text="Сверить заказ", callback_data=f"time any"))
+        current_buttons.add(types.InlineKeyboardButton(text="Продолжить", callback_data=f"time any"))
         await callback_query.message.answer("Время проведения экскурсии необходимо согласовать с гидом.",
                                             reply_markup=current_buttons)
     await bot.delete_message(callback_query.from_user.id, callback_query.message.message_id)
 
 
-@dp.callback_query_handler(lambda c: c.data.startswith("time"), state='*')  # finally
-async def select_date_road(callback_query: types.CallbackQuery, state: FSMContext):
+@dp.callback_query_handler(lambda c: c.data.startswith("time"), state='*')
+async def get_number(callback_query: types.CallbackQuery, state: FSMContext):
     await bot.answer_callback_query(callback_query.id)
-    current_buttons = types.InlineKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-    current_buttons.add(types.InlineKeyboardButton(text="Отправить заявку гиду", callback_data="ready"))
-    current_buttons.add(types.InlineKeyboardButton(text="К началу", callback_data="start"))
-    all_info = []
+    await Form.number.set()
     async with state.proxy() as data:
         if callback_query.data.endswith('any'):
             data['time'] = 'время экскурсии необходимо обсудить'
         else:
             data['time'] = callback_query.data.split()[1] + ":00"
+    await callback_query.message.answer("Введите номер телефона для связи")
+    await bot.delete_message(callback_query.from_user.id, callback_query.message.message_id)
+
+
+@dp.message_handler(state=Form.number)  # finally
+async def create_order_road(message: types.Message, state: FSMContext):
+    current_buttons = types.InlineKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+    current_buttons.add(types.InlineKeyboardButton(text="Отправить заявку гиду", callback_data="ready"))
+    current_buttons.add(types.InlineKeyboardButton(text="К списку экскурсий", callback_data="start"))
+    all_info = []
+    async with state.proxy() as data:
         for k, v in data.items():
             all_info.append(v)
     cost = 0
@@ -203,26 +232,24 @@ async def select_date_road(callback_query: types.CallbackQuery, state: FSMContex
         all_info[3] = "индивидуальная экскурсия"
 
     total = (cost * all_info[1]) * 0.9
-    if all_info[4].isnumeric():
-        all_info[4] += ":00"
-    else:
-        all_info[4] = "время экскурсии необходимо обсудить с гидом"
     async with state.proxy() as data:
-        data["cost"]  = cost
+        data["cost"] = cost
         data["total"] = total
-        data["name"] = callback_query.from_user.username
-    await callback_query.message.answer(f"""*Название экскурсии:* {all_roads[int(all_info[0])][1]}
+        data["name"] = message.from_user.username
+        data["number"] = message.text
+    await message.answer(f"""*Название экскурсии:* {all_roads[int(all_info[0])][1]}
 *Количество человек:* {all_info[1]}
 *Дата и время:* {all_info[2]}  {all_info[4]}
 *Формат посещения:* {all_info[3]}
 *Стоимость:* {cost} ✖ {all_info[1]} ➖ 10 % = {total}
+*Телефон:* {message.text}
 
 """, reply_markup=current_buttons, parse_mode=types.ParseMode.MARKDOWN)
-    await bot.delete_message(callback_query.from_user.id, callback_query.message.message_id)
+    await bot.delete_message(message.from_user.id, message.message_id)
 
 
 @dp.callback_query_handler(lambda c: c.data.startswith("ready"), state='*')  # finally
-async def select_date_road(callback_query: types.CallbackQuery, state: FSMContext):
+async def send_order_road(callback_query: types.CallbackQuery, state: FSMContext):
     current_buttons = types.InlineKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
     current_buttons.add(types.InlineKeyboardButton(text="Вернуться к списку экскурсий", callback_data="start"))
     async with state.proxy() as data:
@@ -232,11 +259,39 @@ async def select_date_road(callback_query: types.CallbackQuery, state: FSMContex
 Дата и время: {data["date"]}     {data["time"]}
 Формат посещения: {data["format"]}
 Стоимость: {int(data["cost"])} ✖ {int(data["count"])} ➖ 10 % = {int(data["total"])}
-Telegram username: @{data["name"]}"""
-    await bot.send_message("153194452", message, disable_notification=False)
+Telegram username: @{data["name"]}
+Телефон: {data["number"]}"""
+
+        conn = sqlite3.connect('order.db')
+        cur = conn.cursor()
+        cur.execute(f'INSERT INTO users VALUES("{callback_query.message.date}", "{all_roads[int(data["number of road"])][0]}", '
+                    f'"{data["count"]}", "{data["date"]}", "{data["format"]}", "{data["cost"]}", '
+                    f'"{data["total"]}", "@{data["name"]}", "{data["number"]}")')
+        conn.commit()
+
+    try:
+        await bot.send_message(Kirill.user_id, message, disable_notification=False)
+        await bot.send_message(Mikhail.user_id, message, disable_notification=False)
+    except:
+        await bot.send_message(Mikhail.user_id, "Only you" + message, disable_notification=False)
+
+
     await callback_query.message.answer("Я передал всю информацию гиду. Он свяжется с Вами в ближайшее время",
                                         reply_markup=current_buttons)
     await bot.delete_message(callback_query.from_user.id, callback_query.message.message_id)
+
+
+@dp.message_handler(commands="money", state='*') # how much money did i make
+async def start_message(message: types.Message):
+    conn = sqlite3.connect('order.db')
+    cur = conn.cursor()
+    cur.execute(f'SELECT total FROM users')
+    result = cur.fetchall()
+    result_mes = 0
+    for i in result:
+        result_mes += float(i[0]) / 9
+    await message.answer(str(result_mes))
+
 
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=False)
