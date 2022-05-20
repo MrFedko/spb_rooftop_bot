@@ -299,13 +299,13 @@ async def start_message(message: types.Message):
 async def start_message(message: types.Message):
     conn = sqlite3.connect('order.db')
     cur = conn.cursor()
-    cur.execute(f'SELECT total FROM users')
+    cur.execute(f'SELECT total, date_of_order FROM users')
     result = cur.fetchall()
-    result_mes = 0
+    result_mes = ''
     for i in result:
-        result_mes += float(i[0]) / 9
+        result_mes += f'{i[1]}: {str(float(i[0]) / 9)} \n'
     conn.commit()
-    await message.answer(str(result_mes))
+    await message.answer(result_mes)
 
 
 @dp.message_handler(commands="how_are_you", state='*')  # all trips
@@ -325,7 +325,7 @@ async def start_message(message: types.Message):
 async def start_message(message: types.Message):
     conn = sqlite3.connect('log.db')
     cur = conn.cursor()
-    cur.execute(f'SELECT * FROM users  GROUP BY user_id')
+    cur.execute(f'SELECT * FROM users  GROUP BY user_id ORDER BY date')
     result = cur.fetchall()
     result_mes = ""
     for i in result:
