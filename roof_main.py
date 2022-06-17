@@ -34,22 +34,21 @@ storage = MemoryStorage()
 dp = Dispatcher(bot, storage=storage)
 logging.basicConfig(level=logging.INFO)
 
-
 # add google sheets
 CREDENTIALS_FILE = "googlesheets.json"
 credentials = ServiceAccountCredentials.from_json_keyfile_name(
-            CREDENTIALS_FILE,
-            ['https://www.googleapis.com/auth/spreadsheets',
-                'https://www.googleapis.com/auth/drive'])
+    CREDENTIALS_FILE,
+    ['https://www.googleapis.com/auth/spreadsheets',
+     'https://www.googleapis.com/auth/drive'])
 httpAuth = credentials.authorize(httplib2.Http())
 service = discovery.build('sheets', 'v4', http=httpAuth)
 values = service.spreadsheets().values().get(
-            spreadsheetId=roof_bot.spreadsheet_id,
-            range='A2:K10',
-            majorDimension='ROWS'
-            ).execute()
+    spreadsheetId=roof_bot.spreadsheet_id,
+    range='A2:K10',
+    majorDimension='ROWS'
+).execute()
 
-all_roads = values['values']                                                        # all sheet on this place
+all_roads = values['values']  # all sheet on this place
 markup = types.InlineKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
 for num, road in enumerate(all_roads):
     markup.add(types.InlineKeyboardButton(text=road[0], callback_data=f"road {num}"))  # create buttons on first collumn
@@ -63,7 +62,8 @@ async def start_message(message: types.Message):
                          reply_markup=markup)
     conn = sqlite3.connect('log.db')
     cur = conn.cursor()
-    cur.execute(f'INSERT INTO users VALUES("{message.date}", "{message.from_user.id}", "@{message.from_user.username}")')
+    cur.execute(
+        f'INSERT INTO users VALUES("{message.date}", "{message.from_user.id}", "@{message.from_user.username}")')
     conn.commit()
 
 
@@ -85,8 +85,7 @@ async def show_about_road(callback_query: types.CallbackQuery, state: FSMContext
     all_buttons.add(types.InlineKeyboardButton(text="Полное описание 🌄", callback_data=f"about {number_of_road}"))
     await bot.answer_callback_query(callback_query.id)
     await bot.send_photo(callback_query.from_user.id,
-                         road[10],
-                         f"""*{road[1]}*
+                         road[10], f"""*{road[1]}*
                          
 {road[8]}
 
@@ -119,7 +118,8 @@ async def select_date_road(callback_query: types.CallbackQuery, state: FSMContex
         data["number of road"] = callback_query.data.split()[1]
         data["count"] = 1
     await bot.answer_callback_query(callback_query.id)
-    await bot.send_message(callback_query.from_user.id, 'Выберите дату', reply_markup=await SimpleCalendar().start_calendar())
+    await bot.send_message(callback_query.from_user.id, 'Выберите дату',
+                           reply_markup=await SimpleCalendar().start_calendar())
     await bot.delete_message(callback_query.from_user.id, callback_query.message.message_id)
 
 
@@ -147,7 +147,8 @@ async def process_simple_calendar(callback_query: types.CallbackQuery, callback_
     await bot.delete_message(callback_query.from_user.id, callback_query.message.message_id)
 
 
-@dp.callback_query_handler(lambda call: call.data in ("-", "+"), state='*')        # change inline keyboard and select count of peoples
+@dp.callback_query_handler(lambda call: call.data in ("-", "+"),
+                           state='*')  # change inline keyboard and select count of peoples
 async def next_keyboard(callback_query: types.CallbackQuery, state: FSMContext):
     async with state.proxy() as data:
         if callback_query.data == "+":
@@ -169,9 +170,9 @@ async def next_keyboard(callback_query: types.CallbackQuery, state: FSMContext):
 
 @dp.callback_query_handler(lambda c: c.data in ("group", "individual"), state='*')  # select time of road
 async def select_time_road(callback_query: types.CallbackQuery, state: FSMContext):
-    button_1 = types.InlineKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True) # 10 - 22
-    button_2 = types.InlineKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True) # 10 - 18
-    button_3 = types.InlineKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True) # 11 - 15
+    button_1 = types.InlineKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)  # 10 - 22
+    button_2 = types.InlineKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)  # 10 - 18
+    button_3 = types.InlineKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)  # 11 - 15
     array = [types.InlineKeyboardButton(text=f"{time}:00", callback_data=f"time {time}") for time in range(10, 23, 2)]
     button_1.add(*array)
     button_2.add(*array[0:5])
@@ -268,9 +269,10 @@ Telegram username: @{data["name"]}
 
         conn = sqlite3.connect('order.db')
         cur = conn.cursor()
-        cur.execute(f'INSERT INTO users VALUES("{callback_query.message.date}", "{all_roads[int(data["number of road"])][0]}", '
-                    f'"{data["count"]}", "{data["date"]}", "{data["format"]}", "{data["cost"]}", '
-                    f'"{data["total"]}", "@{data["name"]}", "{data["number"]}")')
+        cur.execute(
+            f'INSERT INTO users VALUES("{callback_query.message.date}", "{all_roads[int(data["number of road"])][0]}", '
+            f'"{data["count"]}", "{data["date"]}", "{data["format"]}", "{data["cost"]}", '
+            f'"{data["total"]}", "@{data["name"]}", "{data["number"]}")')
         conn.commit()
 
     try:
@@ -278,7 +280,6 @@ Telegram username: @{data["name"]}
         await bot.send_message(Mikhail.user_id, message, disable_notification=False)
     except:
         await bot.send_message(Mikhail.user_id, "Only you" + message, disable_notification=False)
-
 
     await callback_query.message.answer("Я передал всю информацию гиду. Он свяжется с Вами в ближайшее время",
                                         reply_markup=current_buttons)
@@ -299,11 +300,14 @@ async def start_message(message: types.Message):
 async def start_message(message: types.Message):
     conn = sqlite3.connect('order.db')
     cur = conn.cursor()
-    cur.execute(f'SELECT total, date_of_order FROM users')
+    cur.execute(f'SELECT total, date_trip FROM users')
     result = cur.fetchall()
     result_mes = ''
+    tot = 0
     for i in result:
         result_mes += f'{i[1]}: {str(float(i[0]) / 9)} \n'
+        tot += float(i[0]) / 9
+    result_mes += f'Итого: {tot}'
     conn.commit()
     await message.answer(result_mes)
 
@@ -361,4 +365,4 @@ async def start_message(message: types.Message):
 
 
 if __name__ == "__main__":
-    executor.start_polling(dp, skip_updates=False)
+    executor.start_polling(dp, skip_updates=True)
