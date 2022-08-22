@@ -13,6 +13,7 @@ import sqlite3
 
 class Form(StatesGroup):
     number = State()
+    set_id = State()
 
 
 # create logging and db of orders
@@ -293,7 +294,23 @@ async def start_message(message: types.Message):
 /reset
 /how_are_you
 /friends
-/all_friends""")
+/all_friends
+/message""")
+
+
+@dp.message_handler(commands="message", state='*')
+async def get_id(mess: types.Message):
+    await Form.set_id.set()
+    await mess.answer("Set id user & message")
+
+
+@dp.message_handler(state=Form.set_id)
+async def send_message_with_id(message: types.Message, state: FSMContext):
+    id, text = message.text.split("&")
+    await bot.send_message(id, text, disable_notification=False)
+    await state.finish()
+
+
 
 
 @dp.message_handler(commands="money", state='*')  # how much money did i make
@@ -345,7 +362,7 @@ async def start_message(message: types.Message):
     cur.execute(f'SELECT * FROM users')
     result = cur.fetchall()
     result_mes = ""
-    for i in result:
+    for i in result[-20:]:
         result_mes += str(i) + "\n"
     conn.commit()
     await message.answer(str(result_mes))
